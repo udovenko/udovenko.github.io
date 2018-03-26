@@ -33,3 +33,7 @@ So what's the actually problem? The problem is that in our particular case both 
 When **Webpack** builds the **entry** chunk that is responsible for dynamic loading of **children** (the chunks created by analyzing your split points i.e. `require.ensure()`), it embeds **children** chunk names into the result code. It means that **entry** chunk expects particular file to be available in your `config.output.publicPath`.
 
 On the other hand, when files go through **Assets Pipeline** in production, their names change by adding **MD5** hashes. Which means **entry** chunk will unable **children** since they was renamed.
+
+### Official solution
+
+Of course [Shakacode team](http://www.shakacode.com/) was aware of everything I've just explained above. Even in early versions of **React on Rails** repo you can find good document about [code splitting](https://github.com/shakacode/react_on_rails/blob/6.10.0/docs/additional-reading/code-splitting.md) that describes the feature in details.
