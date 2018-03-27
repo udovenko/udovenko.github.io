@@ -2,7 +2,6 @@
 layout: post
 title:  "Using dynamic imports with old versions of React on Rails"
 date:   2018-03-26 11:16:01 +1100
-categories: react-on-rails
 ---
 
 > At the moment of writing this post, [React on Rails gem](https://github.com/shakacode/react_on_rails) has an integration with [Webpacker](https://github.com/rails/webpacker) and should work fine with [Webpack dynamic imports](https://webpack.js.org/guides/code-splitting/#dynamic-imports) so if you are able to swith to the lates version of **React on Rails** - just go ahead, follow gem's official docs and skip this article.
@@ -34,7 +33,7 @@ So what's the actually problem? The problem is that in our particular case both 
 
 When **Webpack** builds the **entry** chunk that is responsible for dynamic loading of **children** (the chunks created by analyzing your split points i.e. `require.ensure()`), it embeds **children** chunk names into the result code. It means that **entry** chunk expects particular file to be available in your `config.output.publicPath`.
 
-On the other hand, when files go through **Assets Pipeline** in production, their names change by adding **MD5** hashes. Which means **entry** chunk will unable **children** since they was renamed.
+On the other hand, when files go through **Assets Pipeline** in production, their names change by adding **MD5** hashes. Which means **entry** chunk will unable to find **children** since they were renamed.
 
 ### An "official" solution
 
@@ -48,3 +47,39 @@ I was pretty unhappy with proposed approach. My main concerns were:
 3. There were good plugins like [StatsWriterPlugin](https://github.com/FormidableLabs/webpack-stats-plugin) for writing manifest file in order to map chunk names to their hashed versions generated during **Webpack** build. Isn't it the same as what **Asset Pipeline** actually does to map initial asset names to "digested" ones?
 
 So **Webpack** was capable to completely replace **Asset Pipeline**. That's actually why **Webpacker** gem was introduced later on. Also extra step with sending chunks over **Asset Pipeline** and double "digesting" them was blowing my and my colleagues mind. That's why I decided to come up with my own solution.
+
+### My solution
+
+My general idea was to build **Webpack** bundle directly to *public/assets* directory. **Rails** can serve static  assets itself, as well as **Nginx** or other servers/proxy that are used in the wild.
+
+First of all I was needed to ensure that **JS** chunks created by **Webpack** have unique name for every code update in production. On the other hand, it was not necessary in development. So I had to use some *ENV* variable to determine how to name chunk files. And *NODE_ENV* was pretty suitable for this purpose. Let's say `config` is our **Webpack** configuration object:
+
+```javascript
+if (process.env.NODE_ENV == 'production') {
+  ...
+  config.output.filename = '[name]-bundle-[chunkhash].js';
+  config.output.chunkFilename = '[name]-bundle-[chunkhash].js';
+} else {
+  ...
+  config.output.filename = '[name]-bundle.js';
+  config.output.chunkFilename = '[name]-bundle.js';
+}
+```
+
+And we have to set `output` to *public/assets* instead of *app/assets/webpack*:
+
+```javascript
+...
+config.output = { path: path.resolve(__dirname, '../public/assets') };
+```
+So now `webpack --config [our.config.js]` will build our bundle without hashes in chunk names while `NODE_ENV=production webpack --config [our.config.js]` will produce chunks with hashed names like *posts-bundle-17730bdaad90d923e32a.js*.
+
+After that I was needed to implement **JS** compression for production. It was pretty easy:
+
+```javascript
+config.plugins.push(
+  new webpack.optimize.UglifyJsPlugin({
+    compress: { warnings: false },
+  })
+);
+```
