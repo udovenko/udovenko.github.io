@@ -176,4 +176,157 @@ module ApplicationHelper
 end
 ```
 
-As you can see all these helpers do not contain much logic. They just create new object of `WebpackAssetTagRenderer` class by passing it current `ActionView::Template` instance so that renderer instance will be able to write directly to current template's buffer. Putting all logic to an isolated class allows to write unit tests for the class itself instead of tons [rspec-rails helper specs](https://github.com/rspec/rspec-rails#helper-specs). It also correctly hides private methods so they will not be accessible by the template.
+As you can see all these helpers do not contain much logic. They just create new object of `WebpackAssetTagRenderer` class by passing it current `ActionView::Template` instance so that renderer instance will be able to write directly to current template's buffer. Putting all logic to an isolated class allows to write unit tests for the class itself instead of tons [rspec-rails helper specs](https://github.com/rspec/rspec-rails#helper-specs). It also correctly hides private methods so they will not be accessible by the template. Here how does it lool like:
+
+```ruby
+# app/helpers/helper_classes/webpack_asset_tag_renderer.rb
+
+module HelperClasses
+  class WebpackAssetTagRenderer
+    # Public constructor.
+    #
+    # *Arguments*:
+    # - +template+ {ActionView::Template} Template instance which buffer will be used for output
+    def initialize(template)
+      @template = template
+    end
+
+    # Inserts JavaScript tag for hot asset by given chunk name for
+    # given react_on_rails environment. If react_on_rails environment is
+    # different, inserts nothing.
+    #
+    # *Arguments*:
+    # - +name+ {String} Name of webpack bundle chunk (entry point or named chunk created by Code Splitting)
+    # - +asset_env_type+ {Symbol} Type of react_on_rails environment for which tag will be included (:hot or :static)
+    def hot_asset_tag(name, asset_env_type)
+      return unless asset_env_type == current_asset_env_type
+      file_url = File.join(Rails.configuration.webpack_dev_server_url, "#{name}-bundle.js")
+      @template.javascript_include_tag file_url
+    end
+
+    # Inserts asset tag of given type (extension) for compiled asset by given
+    # chunk name for given react_on_rails environment. If react_on_rails
+    # environment is different, inserts nothing. Asset URL will depend on build
+    # environment.
+    #
+    # *Arguments*:
+    # - +name+ {String} Name of webpack bundle chunk (entry point or named chunk created by Code Splitting)
+    # - +extension+ {String} Asset extension ('js' or 'css')
+    # - +asset_env_type+ {Symbol} Type of react_on_rails environment for which tag will be included (:hot or :static)
+    def compiled_asset_tag(name, extension, asset_env_type)
+      return unless asset_env_type == current_asset_env_type
+
+      chunks = Rails.configuration.webpack_assets
+
+      # If this is production buils, chunks have hashes and names mapping:
+      return production_asset_tag(chunks, name, extension) if chunks
+
+      # If this is development build and chunks have no hashes in their names:
+      development_asset_tag(name, extension)
+    end
+
+    private
+
+    # Detects if want to use Webpack Dev Server or just static assets.
+    #
+    # *Returns*:
+    # {Symbol} :hot if Webpack Dev Server is used else :static
+    def current_asset_env_type
+      use_hot_reloading = ENV['REACT_ON_RAILS_ENV'] == 'HOT'
+      use_hot_reloading ? :hot : :static
+    end
+
+    # Inserts asset tag of given type (extension) for compiled asset by given
+    # chunk name for given react_on_rails environment. If react_on_rails
+    # environment is different, inserts nothing. Asset URL will contain hash
+    # and be taken from Webpack stats manifest.
+    #
+    # *Arguments*:
+    # - +chunks+ {Hash} Contents of Webpack stats manifest
+    # - +name+ {String} Name of webpack bundle chunk (entry point or named chunk created by Code Splitting)
+    # - +extension+ {String} Asset extension ('js' or 'css')
+    def production_asset_tag(chunks, name, extension)
+      unless chunks[name]
+        raise "There is no chunk files for entry point with name '#{name}'' in Rails.configuration.webpack_assets"
+      end
+
+      extension_prefixed_by_dot = ".#{extension}"
+
+      # Manifest key-value pairs can look like:
+      # app: ['app-bundle-chunkhash.js', 'app-bundle-chunkhash.css']
+      # as well as:
+      # some_chunk: 'some_chunk-bundle-chunkhash.js'
+      asset_file = if chunks[name].instance_of?(Array)
+                     chunks[name].find { |asset_file_name| asset_file_name.end_with? extension_prefixed_by_dot }
+                   else
+                     chunks[name]
+                   end
+
+      asset_file_url = "/assets/#{asset_file.sub(extension_prefixed_by_dot, '')}"
+
+      case extension
+      when 'js'
+        @template.javascript_include_tag asset_file_url
+      when 'css'
+        @template.stylesheet_link_tag asset_file_url, media: 'all'
+      end
+    end
+
+    # Inserts asset tag of given type (extension) for compiled asset by given
+    # chunk name for given react_on_rails environment. If react_on_rails
+    # environment is different, inserts nothing. Asset URL will be generated
+    # based on chunk names convention.
+    #
+    # *Arguments*:
+    # - +name+ {String} Name of webpack bundle chunk (entry point or named chunk created by Code Splitting)
+    # - +extension+ {String} Asset extension ('js' or 'css')
+    def development_asset_tag(name, extension)
+      file_name = "#{name}-bundle.#{extension}"
+      file_path = Rails.root.join('public', 'assets', file_name.to_s)
+
+      unless File.exist?(file_path)
+        raise "Can't Webpack chunk file with name '#{file_name}' in development assests mode"
+      end
+
+      # Add script tag with file last update time stamp as a parameter, like old version of sp_rockets did:
+      file_update_timestamp = File.new(file_path).mtime.to_i
+      extension_prefixed_by_dot = ".#{extension}"
+      file_name_without_extension = file_name.sub(extension_prefixed_by_dot, '')
+      file_url = "/assets/#{file_name_without_extension}?#{file_update_timestamp}"
+
+      case extension
+      when 'js'
+        @template.javascript_include_tag file_url
+      when 'css'
+        @template.stylesheet_link_tag file_url, media: 'all'
+      end
+    end
+  end
+end
+```
+
+The listing contains a lot of comments so general idea of how it works should be clean enough. The class has some specific things that you might find not useful for your own projects but it serves its purpose well.
+
+There is some difference in tags generation logic against how **React on Rails** helpers do that: instead of passing everything to one **JS** helper, I created specific helper for **hot reloading** mode and for **static assets**. Each of them generates `<script>` tag only for corresponding type of *REACT_ON_RAILS_ENV* or does nothing if environment does not match. To understand this better, let's look at the final part of our customization - application layout:
+
+```erb
+<!DOCTYPE html>
+<html>
+  <head>
+    ...
+    <%= webpack_env_compiled_stylesheet_tag 'app', :static %>
+    <%= webpack_env_hot_asset_tag 'app', :hot %>
+    <%= webpack_env_compiled_javascript_tag 'app', :static %>
+    <%= yield :asset_tags if content_for?(:asset_tags) %>
+  </head>
+  <body>
+    ...
+  </body>
+</html>
+```
+
+So for `REACT_ON_RAILS_ENV=HOT` it will create only one `<script ...>`tag pointing to **Webpack Dev Server**'s asset. `<link rel="stylesheet" ...>` tag will not be created since **Dev Server** will manage styles for us.
+
+In case when *REACT_ON_RAILS_ENV* is not set, our template will be rendered with `<script ...>` tag pointing to compiled static **JS** file and `<link rel="stylesheet" ...>` tag pointing to compile **CSS**.
+
+The only one final thing that's left to do is to remove that rake task which creates symlinks to files "digested" by **Asset Pipline**. We don't need it anymore.
