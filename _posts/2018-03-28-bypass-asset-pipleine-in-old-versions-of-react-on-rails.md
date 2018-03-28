@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Using dynamic imports with old versions of React on Rails"
+title:  "Bypass Asset Pipeline in old versions of React on Rails"
 date:   2018-03-26 11:16:01 +1100
 ---
 
@@ -12,9 +12,9 @@ But if you're still here and reading this, let's return few years back, to the m
 
 > For clarity lets imagine that the version of **React on Rails** on that moment was 6.10.0. I will give all links to the gem's docs under that particular tag.
 
-Why would you use that old version? Well, usually it can happen when you are clocked by some other old gems that produce dependency conflict with newer versions of **React on Rails** or you're simply use old version of **Rails** itself.
+Why would you use that old version? Well, usually it can happen when you are locked by some other old gems that produce dependency conflict with newer versions of **React on Rails** or you're simply use old version of **Rails** itself.
 
-> Also for clarity lets recall what these **Webpack**-specific words like **bundle** or **chunk** mean. According to the [glossary](https://webpack.js.org/glossary/):
+> Also for clarity lets recall what those **Webpack**-specific words like **bundle** or **chunk** mean. According to the [glossary](https://webpack.js.org/glossary/):
 - **chunk** - Webpack-specific term is used internally to manage the bundling process. Bundles are composed out of chunks, of which there are several types (e.g. entry and child). Typically, chunks directly correspond with the output bundles however, there are some configurations that don't yield a one-to-one relationship.
 - **bundle** - Produced from a number of distinct modules, bundles contain the final versions of source files that have already undergone the loading and compilation process.
 
