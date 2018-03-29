@@ -20,7 +20,7 @@ description: >- # this means to ignore newlines until "baseurl:"
   A small tech blog where we talk about some interesting cases in debugging Rails and React.js applications,
   tweaks, customizations and other things I found useful to build reliable and maintanable codes.
 baseurl: "" # the subpath of your site, e.g. /blog
-url: "" # the base hostname & protocol for your site, e.g. http://example.com
+url: https://udovenko.github.io
 # twitter_username: jekyllrb
 github_username: udovenko
 
